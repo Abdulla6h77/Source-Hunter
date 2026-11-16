@@ -1,0 +1,14 @@
+{
+  "name": "source-hunter-extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.mjs",
+    "watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/chrome": "^0.0.270"
+  }
+}

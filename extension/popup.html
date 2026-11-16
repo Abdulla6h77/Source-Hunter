@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Source Hunter</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          <line x1="11" y1="8" x2="11" y2="14"/>
+          <line x1="8" y1="11" x2="14" y2="11"/>
+        </svg>
+        Source Hunter
+      </div>
+      <button id="btn-clear" class="btn-icon" title="Clear" aria-label="Clear">✕</button>
+    </header>
+
+    <!-- Idle state -->
+    <div id="state-idle" class="state">
+      <p class="hint">Highlight a claim, quote, or statistic on any webpage, then:</p>
+      <ul class="hint-list">
+        <li>Right-click → <strong>Trace source with Source Hunter</strong></li>
+        <li>Or click <strong>Trace Selection</strong> below if you've selected text</li>
+      </ul>
+      <div id="selection-preview" class="selection-preview hidden"></div>
+      <button id="btn-trace-selection" class="btn-primary hidden">Trace Selection</button>
+    </div>
+
+    <!-- Loading state -->
+    <div id="state-loading" class="state hidden">
+      <div class="spinner-wrap">
+        <div class="spinner"></div>
+        <span>Tracing source chain…</span>
+      </div>
+      <div id="claim-preview" class="claim-preview"></div>
+      <div class="progress-steps">
+        <div class="step active">Research in progress. You can close and reopen this popup to check the result.</div>
+      </div>
+      <button id="btn-cancel" class="btn-secondary">Close</button>
+    </div>
+
+    <!-- Results state -->
+    <div id="state-result" class="state hidden">
+      <div id="verdict-banner" class="verdict-banner"></div>
+      <div id="claim-box" class="claim-box"></div>
+      <div id="chain-container" class="chain-container"></div>
+      <div id="partial-warning" class="partial-warning hidden">
+        ⚠️ Partial result — trace timed out before completing.
+      </div>
+      <div class="result-footer">
+        <button id="btn-new-trace" class="btn-primary">New Trace</button>
+        <button id="btn-copy" class="btn-secondary">Copy Report</button>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div id="state-error" class="state hidden">
+      <div class="error-box">
+        <div class="error-icon">⚠</div>
+        <div id="error-message" class="error-message"></div>
+        <button id="btn-retry" class="btn-primary">Retry</button>
+        <button id="btn-new" class="btn-secondary">New Trace</button>
+      </div>
+      <div class="error-help">
+        <p>Make sure the Source Hunter backend is running:</p>
+        <code>cd backend &amp;&amp; npm run dev</code>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
