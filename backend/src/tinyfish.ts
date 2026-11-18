@@ -10,7 +10,7 @@ export const ENDPOINTS = {
 } as const;
 
 export class TinyFishError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(public readonly status: number, message: string, public readonly partialResearch?: {report: string; runId: string | null; citations: unknown[]; finalCitations: unknown[]}) {
     super(message);
     this.name = 'TinyFishError';
   }
@@ -171,7 +171,7 @@ export async function tfResearch(
     clearTimeout(timer);
     if (e instanceof TinyFishError) throw e;
     if (e instanceof Error && /abort/i.test(e.name)) {
-      throw new TinyFishError(504, `TinyResearch timed out after ${timeoutMs / 1000}s`);
+      throw new TinyFishError(504, `TinyResearch timed out after ${timeoutMs / 1000}s`, {report, runId: run_id, citations: [...citations, ...finalCitations], finalCitations});
     }
     throw new TinyFishError(502, `TinyResearch error: ${e instanceof Error ? e.message : String(e)}`);
   }

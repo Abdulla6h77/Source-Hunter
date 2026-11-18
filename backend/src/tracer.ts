@@ -31,10 +31,18 @@ const fetchResultSchema = z.object({
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 /** Extract an ISO date from a TinyFish date string or null. */
-function normalizeDate(d: string | null | undefined): string | null {
+export function normalizeDate(d: string | null | undefined): string | null {
   if (!d) return null;
   const m = d.match(/\d{4}-\d{2}-\d{2}/);
-  return m ? m[0] : null;
+  if (m) {
+    const value = m[0];
+    const date = new Date(value + 'T00:00:00Z');
+    return Number.isFinite(date.getTime()) && date.toISOString().startsWith(value) ? value : null;
+  }
+  const prose = d.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/i);
+  if (!prose) return null;
+  const month = 'january february march april may june july august september october november december'.split(' ').indexOf(prose[1].toLowerCase()) + 1;
+  return normalizeDate(`${prose[3]}-${String(month).padStart(2, '0')}-${prose[2].padStart(2, '0')}`);
 }
 
 /** Score how well an excerpt matches the original claim (0–1). */
@@ -77,7 +85,7 @@ function detectRounding(claim: string, excerpt: string): boolean {
 }
 
 /** Build a verdict from the chain of steps and the original claim. */
-function deriveVerdict(claim: string, chain: CitationStep[]): {
+export function deriveVerdict(claim: string, chain: CitationStep[]): {
   verdict: ClaimVerdict;
   explanation: string;
 } {
@@ -85,61 +93,30 @@ function deriveVerdict(claim: string, chain: CitationStep[]): {
     return { verdict: 'no-source', explanation: 'No traceable source chain could be established.' };
   }
 
-  const primary = chain.find(s => s.isPrimary) ?? chain[chain.length - 1];
-  if (!primary) {
-    return { verdict: 'no-source', explanation: 'Citation trail did not reach a primary source.' };
+  const primary = chain.find(s => s.isPrimary);
+  if (!primary) return {verdict: 'no-source', explanation: 'No verified primary-source evidence is available.'};
+  const excerpt = primary.excerpt.replace(/[*_]/g, '');
+  const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  // Verbatim containment is a wording check, never a semantic truth score.
+  if (normalized(excerpt).includes(normalized(claim))) {
+    return {verdict: 'matches', explanation: 'The selected wording occurs in the fetched primary-source excerpt. This verifies wording, not every implication or the source’s accuracy.'};
   }
-
-  // Check for circular citation
-  const urls = chain.map(s => s.url);
-  if (new Set(urls).size < urls.length) {
-    return { verdict: 'unsupported', explanation: 'Citation trail forms a circular loop; no independent primary source found.' };
-  }
-
-  const sim = claimSimilarity(claim, primary.excerpt);
-  const thresholds = /\b(?:over|under|exceed(?:ed|s)?|at least|more than|less than)\b/i;
+  const sim = claimSimilarity(claim, excerpt);
+  if (sim < 0.3) return {verdict: 'unknown', explanation: 'The primary-source excerpt is insufficiently relevant. Unrelated wording is not evidence of misquotation.'};
   const qualifiers = /\b(?:likely|estimated?|approximately|preliminary)\b/i;
-  const rounded = !thresholds.test(claim) && detectRounding(claim, primary.excerpt);
-
-  if (thresholds.test(claim) && qualifiers.test(primary.excerpt) && !qualifiers.test(claim)) {
-    return {
-      verdict: 'altered',
-      explanation: 'The cited source describes a qualified estimate. Check its reference date and uncertainty before treating the claim as a measured total.',
-    };
+  if (qualifiers.test(excerpt) && !qualifiers.test(claim)) {
+    return {verdict: 'altered', explanation: 'The source includes uncertainty that the selection omits. Review the excerpt and reference period; the full selection is not verified.'};
   }
-
-  if (rounded) {
-    return {
-      verdict: 'rounded',
-      explanation: `The primary source states "${primary.excerpt.slice(0, 200)}", but the claim uses a rounded or approximated figure.`,
-    };
+  const numbers = extractNumbers(claim).filter(n => n < 1800 || n > 2100);
+  const sourceNumbers = extractNumbers(excerpt);
+  const sameNumbers = numbers.length > 0 && numbers.every(n => sourceNumbers.includes(n));
+  if (!sameNumbers && numbers.length && detectRounding(claim, excerpt)) {
+    return {verdict: 'unknown', explanation: 'Nearby numerical values were found, but rounding cannot be confirmed without matching units, population and reference period. Compare the excerpts.'};
   }
-
-  if (sim >= 0.6) {
-    return {
-      verdict: 'matches',
-      explanation: `Claim matches the primary source (${Math.round(sim * 100)}% word overlap). Primary: "${primary.excerpt.slice(0, 200)}"`,
-    };
+  if (sameNumbers && sim >= 0.4) {
+    return {verdict: 'partial-support', explanation: 'The primary-source excerpt contains the selected numerical figure and overlapping context. Other clauses, comparisons, units and reference dates still require review; the full selection is not verified.'};
   }
-
-  if (sim >= 0.3) {
-    return {
-      verdict: 'unknown',
-      explanation: 'The original record is linked below. Compare its wording and context before judging whether it supports the full claim.',
-    };
-  }
-
-  if (sim < 0.2) {
-    return {
-      verdict: 'misquoted',
-      explanation: `Claim appears to misquote or misattribute the source. Actual source says: "${primary.excerpt.slice(0, 200)}"`,
-    };
-  }
-
-  return {
-    verdict: 'unknown',
-    explanation: 'Insufficient evidence to determine whether the claim matches the source.',
-  };
+  return {verdict: 'unknown', explanation: 'Relevant primary-source evidence is available, but automated wording checks cannot establish support for the full selection.'};
 }
 
 // ── Citation extraction from TinyResearch report ──────────────────────────
@@ -270,7 +247,7 @@ async function fetchPlainDataset(url: string): Promise<string | undefined> {
 }
 
 /** Extract the best matching excerpt from a page's text for a given claim. */
-function bestExcerpt(claim: string, text: string, maxLen = 400): string {
+export function bestExcerpt(claim: string, text: string, maxLen = 400): string {
   if (!text) return '';
   const years = [...claim.matchAll(/\b(?:18|19|20)\d{2}\b/g)];
   if (years.length === 1) {
@@ -300,7 +277,7 @@ function bestExcerpt(claim: string, text: string, maxLen = 400): string {
       best = sentence;
     }
   }
-  return bestSim >= 0.18 ? best.slice(0, maxLen) : '';
+  return bestSim >= 0.18 ? best : '';
 }
 
 /** Read an explicit source designation without assuming the last citation is primary. */
@@ -432,6 +409,12 @@ export async function traceSource(
       if (e instanceof TinyFishError && e.status === 504) {
         // Timeout — partial result
         isPartial = true;
+        if (e.partialResearch) {
+          report = e.partialResearch.report;
+          researchRunId = e.partialResearch.runId;
+          rawCitations = e.partialResearch.citations;
+          finalCitations = e.partialResearch.finalCitations;
+        }
         console.warn('[tracer] TinyResearch timed out — returning partial result');
       } else {
         throw e;
@@ -484,10 +467,18 @@ export async function traceSource(
 
   const chain: CitationStep[] = [];
   const pageContent = new Map<string, string>();
-  const preferredPrimary = [transcript, primaryDownload, primaryUrl].find(url => {
-    const page = url && pageData.get(url);
-    return page && bestExcerpt(claim, page.text);
-  });
+  // A publisher landing page that directly links the designated original is
+  // primary evidence too. Never promote an arbitrary related search result.
+  const primaryCandidates = [...new Set([transcript, primaryDownload, primaryUrl,
+    ...urls.filter(url => {
+      if (!primaryUrl) return false;
+      const page = pageData.get(url);
+      return page && new URL(page.url).origin === new URL(primaryUrl).origin
+        && page.text.includes(`](${primaryUrl})`);
+    })].filter((url): url is string => Boolean(url)))];
+  const preferredPrimary = primaryCandidates.map(url => ({url,
+    score: claimSimilarity(claim, bestExcerpt(claim, pageData.get(url)?.text ?? '')),
+  })).filter(item => item.score >= 0.18).sort((a, b) => b.score - a.score)[0]?.url;
   const trailUrls = [...urls.filter(url => url !== preferredPrimary), ...urls.filter(url => url === preferredPrimary)];
   let refutingSource: CitationStep | undefined;
   for (const url of trailUrls) {
@@ -502,7 +493,7 @@ export async function traceSource(
     const step: CitationStep = {
       url: page.url,
       title: page.title || catalog?.title || citation?.title || 'Unknown title',
-      date: url === primaryDownload ? catalog?.date ?? page.date : page.date,
+      date: page.date ?? citation?.date ?? normalizeDate(page.title),
       excerpt,
       relationship: isPrimary ? 'primary' : 'unknown',
       isPrimary,
@@ -538,7 +529,7 @@ export async function traceSource(
     };
   }
 
-  const { verdict, explanation } = deriveVerdict(claim, [primarySource]);
+  const { verdict, explanation } = deriveVerdict(claim, chain);
 
   return {
     claim,

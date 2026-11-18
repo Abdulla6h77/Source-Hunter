@@ -29,6 +29,7 @@ function showState(state: State) {
 // ── Verdict display ───────────────────────────────────────────────────────
 
 const VERDICT_META: Record<ClaimVerdict, { icon: string; label: string; cssClass: string }> = {
+  'partial-support': { icon: 'i', label: 'Partial Evidence - Review Needed', cssClass: 'verdict-unknown' },
   matches:     { icon: '✅', label: 'Matches Primary Source', cssClass: 'verdict-matches' },
   rounded:     { icon: '🔢', label: 'Number Rounded in Claim', cssClass: 'verdict-rounded' },
   altered:     { icon: '✏️', label: 'Claim Wording Altered', cssClass: 'verdict-altered' },
@@ -66,6 +67,7 @@ function renderStep(step: CitationStep, index: number, total: number, refutation
       <a href="${escapeHtml(step.url)}" target="_blank" rel="noopener noreferrer" class="step-url"
          title="${escapeHtml(step.url)}">${escapeHtml(truncate(step.url, 60))}</a>
       <div class="step-date">📅 ${dateDisplay}</div>
+      <div>${step.isPrimary ? 'Primary-source evidence' : step.relationship === 'cites' ? 'Verified link to next source' : 'Related evidence: connection unverified'}</div>
       ${excerpt}
     </div>
     ${index < total - 1 && step.relationship === 'cites' ? `
@@ -163,12 +165,14 @@ function buildReport(result: TraceResult): string {
     `## Verdict: ${result.verdict.toUpperCase()}`,
     result.verdictExplanation,
     ``,
-    `## Citation Chain`,
+    `## Sources and Verified Connections`,
+    `Order is not a proven citation trail. Only explicit links are marked verified.`,
   ];
   for (const [i, step] of result.chain.entries()) {
     lines.push(`\n### Step ${i + 1}${step.isPrimary ? ' (Primary Source)' : ''}`);
     lines.push(`Title: ${step.title}`);
     lines.push(`URL: ${step.url}`);
+    lines.push(`Connection: ${step.relationship === 'cites' ? 'Verified link to next source' : step.isPrimary ? 'Primary-source evidence' : 'Unverified / related evidence'}`);
     lines.push(`Date: ${step.date ?? 'Unknown'}`);
     lines.push(`Excerpt: "${step.excerpt}"`);
   }

@@ -1,6 +1,7 @@
 // Shared types for Source Hunter backend and extension.
 
 export type ClaimVerdict =
+  | 'partial-support'
   | 'matches'       // wording matches the original closely
   | 'rounded'       // number rounded (e.g. 3.14 → "over 3")
   | 'altered'       // wording meaningfully changed

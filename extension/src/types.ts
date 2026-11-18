@@ -1,6 +1,7 @@
 // Shared types (duplicated from backend for extension use — no server dep).
 
 export type ClaimVerdict =
+  | 'partial-support'
   | 'matches'
   | 'rounded'
   | 'altered'

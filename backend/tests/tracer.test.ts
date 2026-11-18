@@ -3,7 +3,7 @@
 
 import { describe, it, mock, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { traceSource } from '../src/tracer.js';
+import { traceSource, deriveVerdict, normalizeDate as actualDate } from '../src/tracer.js';
 
 // ── Helpers duplicated here to avoid side effects ──────────────────────────
 
@@ -224,4 +224,53 @@ it('fetches the primary from the final citation order ahead of discovery results
   assert.equal(result.primarySource?.url, canonical);
   assert.equal(result.primarySource?.excerpt, claim);
   assert.equal(result.verdict, 'matches');
+});
+
+
+describe('production verdict regression checks', () => {
+  const step = (excerpt: string) => ({url: 'https://example.org/report', title: 'Report', date: null,
+    excerpt, relationship: 'primary' as const, isPrimary: true});
+  it('does not call opposite wording a match despite high overlap', () => {
+    assert.notEqual(deriveVerdict('The treatment is effective', [step('The treatment is not effective')]).verdict, 'matches');
+  });
+  it('does not infer misquotation from an unrelated excerpt', () => {
+    assert.equal(deriveVerdict('The sky is blue', [step('Accounting policies are outlined in appendix seven')]).verdict, 'unknown');
+  });
+  it('preserves uncertainty when a long numerical selection is only partly covered', () => {
+    const claim = 'UNHCR warned the total continued to increase in the first four months of this year and was likely to have exceeded 120 million, more than twice the population of Italy.';
+    const excerpt = 'UNHCR estimates forced displacement continued to increase in the first four months of 2024 and is likely to have exceeded 120 million.';
+    assert.equal(deriveVerdict(claim, [step(excerpt)]).verdict, 'partial-support');
+  });
+  it('uses explicit title dates and rejects invalid dates', () => {
+    assert.equal(actualDate('Implementation Note issued July 26, 2023'), '2023-07-26');
+    assert.equal(actualDate('2023-02-31'), null);
+    assert.equal(actualDate('Global Trends 2023'), null);
+  });
+});
+
+it('prefers relevant linked primary landing-page evidence over unrelated PDF wording', async (t) => {
+  const prior = process.env.TINYFISH_API_KEY;
+  process.env.TINYFISH_API_KEY = 'fixture-key';
+  t.after(() => {if (prior === undefined) delete process.env.TINYFISH_API_KEY; else process.env.TINYFISH_API_KEY = prior;});
+  const pdf = 'https://example.org/report.pdf';
+  const landing = 'https://example.org/report';
+  const claim = 'UNHCR warned the total continued to increase in the first four months of this year and was likely to have exceeded 120 million, more than twice the population of Italy.';
+  const excerpt = 'UNHCR estimates forced displacement continued to increase in the first four months of 2024 and is likely to have exceeded 120 million.';
+  t.mock.method(globalThis, 'fetch', async (input: string) => {
+    const url = new URL(input);
+    if (url.hostname === 'api.search.tinyfish.ai') return Response.json({results: []});
+    assert.equal(url.hostname, 'api.fetch.tinyfish.ai');
+    return Response.json({results: [
+      {url: pdf, text: 'World population estimates and people in need of international protection are based on the available data.'},
+      {url: landing, text: excerpt + '\n[Download](' + pdf + ')', title: 'Report June 13, 2024'},
+    ]});
+  });
+  const result = await traceSource(claim, 'https://news.example.org/story', 'Article', {
+    savedResearch: {runId: 'offline-regression', report: 'Primary source: ' + pdf, citations: [pdf, landing]},
+  });
+  assert.equal(result.primarySource?.url, landing);
+  assert.equal(result.primarySource?.excerpt, excerpt);
+  assert.equal(result.primarySource?.date, '2024-06-13');
+  assert.equal(result.verdict, 'partial-support');
+  assert.ok(result.chain.every(s => s.relationship !== 'cites'));
 });
